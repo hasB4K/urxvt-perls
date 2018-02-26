@@ -1,4 +1,4 @@
-#! perl -w
+#!/usr/bin/perl
 # Author:   Bert Muennich
 # Website:  http://www.github.com/muennich/urxvt-perls
 # License:  GPLv2
@@ -12,6 +12,10 @@
 # activate keyboard-select directly in backward search mode:
 #   URxvt.keysym.M-s: perl:keyboard-select:search
 
+# The copy use by default the PRIMARY buffer. You can also use the CLIPBOARD
+# buffer by setting this option to true:
+#   URxvt.keyboard-select.also-use-clipboard: true
+
 # Use Meta-Escape to activate selection mode, then use the following keys:
 #   h/j/k/l:    Move cursor left/down/up/right (also with arrow keys)
 #   g/G/0/^/$/H/M/L/f/F/;/,/w/W/b/B/e/E: More vi-like cursor movement keys
@@ -23,12 +27,17 @@
 #   y/Return:   Copy selection to primary buffer, Return: quit afterwards
 #   Y:          Copy selected lines to primary buffer or cursor line and quit
 #   q/Escape:   Quit keyboard selection mode
+#   URxvt.keyboard-select.also-use-clipboard: true
 
 
 use strict;
+use warnings;
 
 sub on_start{
 	my ($self) = @_;
+
+	$self->{copy_cmd} = $self->x_resource('clipboard.copycmd') || 'xsel -ib';
+	$self->{also_use_clipboard} = $self->x_resource('keyboard-select.also-use-clipboard') || 'false';
 
 	$self->{patterns}{'w'} = qr/\w[^\w\s]|\W\w|\s\S/;
 	$self->{patterns}{'W'} = qr/\s\S/;
@@ -36,6 +45,25 @@ sub on_start{
 	$self->{patterns}{'B'} = qr/.*\s\S/;
 	$self->{patterns}{'e'} = qr/[^\w\s](?=\w)|\w(?=\W)|\S(?=\s|$)/;
 	$self->{patterns}{'E'} = qr/\S(?=\s|$)/;
+
+	()
+}
+
+sub copy {
+	my ($self) = @_;
+
+	if ($self->{also_use_clipboard} eq 'false') {
+            return;
+	}
+
+	if (open(CLIPBOARD, "| $self->{copy_cmd}")) {
+		my $sel = $self->selection();
+		utf8::encode($sel);
+		print CLIPBOARD $sel;
+		close(CLIPBOARD);
+	} else {
+		print STDERR "error running '$self->{copy_cmd}': $!\n";
+	}
 
 	()
 }
@@ -141,6 +169,7 @@ sub key_press {
 			$self->selection_beg($br, $bc);
 			$self->selection_end($er, $ec);
 			$self->selection_make($event->{time}, $self->{select} eq 'b');
+			copy($self);
 			if (lc($key) eq 'y') {
 				$self->selection_beg(1, 0);
 				$self->selection_end(1, 0);
